@@ -38,9 +38,21 @@ void uri_entered_cb(GtkWidget* entry, gpointer data) {
 	}
 	// Get the URL.
 	char * uri = get_entered_uri(entry);
-	// Append your codemm_channel *channel[MAX_TAB] here
-	// Send 'which' message to 'which' process?
-	//
+	// Append your code here
+	/*
+	send NEW_URI_ENTERED request message to the ROUTER process
+	message buff should contain three parts:
+	1)type:NEW_URI_ENTERED
+	2)uri: uri
+	3)render_in_tab: tab_index
+	*/
+	child_req_to_parent *buff = (child_req_to_parent*) malloc(sizeof(child_req_to_parent));
+	buff->type = 1;
+	printf("%d uri_entered_cb", buff->type);
+	strcpy(buff->req.uri_req.uri, uri);
+	buff->req.uri_req.render_in_tab= tab_index;
+	write(channel.child_to_parent_fd[1], buff, sizeof( child_req_to_parent));
+
 }
 
 /*
@@ -58,6 +70,7 @@ void uri_entered_cb(GtkWidget* entry, gpointer data) {
  */
 void create_new_tab_cb(GtkButton *button, gpointer data)
 {
+	//printf("create new tab cb\n");
 	if(data == NULL) {
 		return;
 	}
@@ -65,10 +78,11 @@ void create_new_tab_cb(GtkButton *button, gpointer data)
 	// This channel have pipes to communicate with ROUTER.
 	comm_channel channel = b_window->channel;
 	// Append your code here
-	// Send 'which' message to 'which' process?
-	//
-  child_req_to_parent *buff=(child_req_to_parent*) malloc(sizeof(child_req_to_parent));
+	//send CREATE_TAB type of message to ROUTER proecss
+  child_req_to_parent *buff = (child_req_to_parent*) malloc(sizeof(child_req_to_parent));
 	buff->type = 0;
+	printf("%d create_new_tab_cb", buff->type);
+
 	write(channel.child_to_parent_fd[1], buff, sizeof(struct child_req_to_parent));
 }
 
@@ -89,18 +103,51 @@ int url_rendering_process(int tab_index, comm_channel *channel) {
 
 	// Create url-rendering window
 	create_browser(URL_RENDERING_TAB, tab_index, NULL, NULL, &b_window, channel);
-	child_req_to_parent req;
+	//child_req_to_parent req;
 	fprintf(stderr,"tab %d\n", tab_index);
 	close(channel->child_to_parent_fd[0]);
 	close(channel->parent_to_child_fd[1]);
+	int flags;
+	flags = fcntl(channel->parent_to_child_fd[0], F_GETFL);
+	fcntl(channel->parent_to_child_fd[0], F_SETFL, flags | O_NONBLOCK);
+
+	child_req_to_parent *buff= (child_req_to_parent*) malloc(sizeof(child_req_to_parent));
+
+	//infinite loop to wait till the router writes the message for the rendering
 	while (1) {
 		usleep(1000);
-		// Append your code here
-		// Handle 'which' messages?
-		//
-		process_single_gtk_event();
+		/*
+		when we read from the non-blocking pipe, there exists three situtations:
+		1) nread = -1:
+		error including EAGAIN, i.e., no data is immediately available for non-blocking reading
+		2) nread = 0: end of file
+		3) nread > 0: normal read into buff
+		*/
+		ssize_t nread= read(channel->parent_to_child_fd[0], buff, sizeof(child_req_to_parent));
 
+		if (nread>0)
+		{
+			/*buff has two types
+			- type = 1, we have to render the new url-rendering;
+			- type = 2, kill the tab
+			*/
+			switch (buff->type){
+	 			case 1: printf("NEW_URI_ENTERED\n");
+					render_web_page_in_tab(buff->req.uri_req.uri, b_window);
+	 				break;
+	 			case 2: printf("TAB_KILLED\n");
+					process_all_gtk_events();
+					printf("Tab kill message received from router \n");
+					return 0;//do clean up in main
+				default:
+					printf("%d, other messages read - bogus\n", buff->type );
+			}
+		}
+
+		else
+			process_single_gtk_event();
 	}
+
 	return 0;
 }
 /*
@@ -137,7 +184,8 @@ int router_process() {
 	int open_tabs = 0;
 	int flags;
 	child_req_to_parent *buff=(child_req_to_parent*) malloc(sizeof(child_req_to_parent));
-	for (int i = 0; i<MAX_TAB;i++){
+	int i;
+	for (i = 0; i<MAX_TAB;i++){
 		channel[i]=NULL;
 	}
 	// Prepare communication pipes with the CONTROLLER process
@@ -151,59 +199,91 @@ int router_process() {
 		controller_process(channel[0]);
 		exit(0);
 	}
+	close(channel[0]->child_to_parent_fd[1]);
+	close(channel[0]->parent_to_child_fd[0]);
+		// Poll child processes' communication channels using non-blocking pipes.
+		while(1){
+			int i;
+			for (i=0;i<=open_tabs;i++){
+				if (channel[i]!=NULL){
+					//configure the pipe as the non-blocking pipe
+					flags = fcntl(channel[i]->child_to_parent_fd[0], F_GETFL);
+					fcntl(channel[i]->child_to_parent_fd[0], F_SETFL, flags | O_NONBLOCK);
+					/*
+					when we read from the non-blocking pipe, there exists three situtations:
+					1)error including EAGAIN, i.e., no data is immediately available for non-blocking reading: nread = -1
+					2)end of file: nread = 0
+					3)normal read into buff: nread > 0
+					*/
+					//ssize_t nread= read(channel[i]->child_to_parent_fd[0],buff,sizeof(struct child_req_to_parent));
+					ssize_t nread= read(channel[i]->child_to_parent_fd[0],buff,sizeof(struct child_req_to_parent));
 
+					if (nread>0){
+						switch (buff->type){
 
-	// Poll child processes' communication channels using non-blocking pipes.
-while(1){
-	for (int i=0;i<=open_tabs;i++){
-		if (channel[i]!=NULL){
-			flags = fcntl(channel[i]->child_to_parent_fd[0], F_GETFL);
-			fcntl(channel[i]->child_to_parent_fd[0], F_SETFL, flags | O_NONBLOCK);
-			if (read(channel[i]->child_to_parent_fd[0],buff,sizeof(struct child_req_to_parent))!=-1){
-				 switch (buff->type){
-					 case 0:
-					 				open_tabs++;
-									channel[open_tabs] =(comm_channel*) malloc(sizeof(comm_channel));
-									pipe(channel[open_tabs]->parent_to_child_fd);
-									pipe(channel[open_tabs]->child_to_parent_fd);
-					 				printf("CREATE_TAB\n");
-									if ((tab_pid[open_tabs]=fork()) == 0){
-										url_rendering_process(open_tabs,channel[open_tabs]);
-										exit(0);
-									}
-									break;
-						case 1: printf("NEW_URI_ENTERED\n");
-										new_uri_req *request_uri = (new_uri_req*) malloc(sizeof(new_uri_req));
-										request_uri->render_in_tab = buff->req.new_uri_req.render_in_tab;
-										request_uri->uri = buff->req.new_uri_req.uri;
-										write(channel[render_in_tab]->parent_to_child_fd[1],request_uri, sizeof(new_uri_req) );
-										break;
-						case 2: printf("TAB_KILLED\n");
-										if (i==0){
-											//cleanup all tabs open and exit!
-											exit(0);
-										}
-										break;
-				 }
+							 /*
+							 message type 0: CREATE_TAB
+							 create a bi-directional pipe beforefork the url_rendering_process,
+							 i.e., we need to configure two pipes within this channel in the channel array
+							 */
+							case 0:
+								open_tabs++;
+								channel[open_tabs] =(comm_channel*) malloc(sizeof(comm_channel));
+								pipe(channel[open_tabs]->parent_to_child_fd);
+								pipe(channel[open_tabs]->child_to_parent_fd);
+				 				printf("CREATE_TAB\n");
+								if ((tab_pid[open_tabs]=fork()) == 0){
+									printf("CREATE_TAB, open_tabs %d\n", open_tabs);
+									url_rendering_process(open_tabs,channel[open_tabs]);
+									exit(0);
+								}
+								else {
+								printf("before pipe close");
+								close(channel[open_tabs]->child_to_parent_fd[1]);
+								close(channel[open_tabs]->parent_to_child_fd[0]);
+								break;
+							}
+								/*
+								message type 1: NEW_URI_ENTERED
+								read url from controller_process and write to url_rendering_process
+								*/
+							case 1: printf("NEW_URI_ENTERED\n");
+								//new_uri_req *request_uri = (new_uri_req*) malloc(sizeof(new_uri_req));
+								//request_uri->render_in_tab = buff->req.uri_req.render_in_tab;
+								//char *temp =buff->req.uri_req.uri;
+								//request_uri->uri = temp;
+								//strcpy(buff->req.uri_req.uri, request_uri->uri);
+								//write(channel[request_uri->render_in_tab]->parent_to_child_fd[1], buff, sizeof(child_req_to_parent) );
+								write(channel[buff->req.uri_req.render_in_tab]->parent_to_child_fd[1], buff, sizeof(child_req_to_parent) );
+								break;
 
-			 }
-			 usleep(1000);
-		 }
+							case 2: printf("TAB_KILLED\n");
+								if (i==0){
+									//cleanup all tabs open and exit!
+									//channel[idx]= NULL
+									exit(0);
+								}
+								break;
+						}
+					}
+					usleep(1000);
+				}
+			}
 	 }
- }
 
-	//   handle received messages:
-	//     CREATE_TAB:
-	//       Prepare communication pipes with a new URL-RENDERING process
-	//       Fork the new URL-RENDERING process
-	//     NEW_URI_ENTERED:
-	//       Send message to the URL-RENDERING process in which the new url is going to be rendered
-	//     TAB_KILLED:
-	//       If the killed process is the CONTROLLER process, send messages to kill all URL-RENDERING processes
-	//       If the killed process is a URL-RENDERING process, send message to the URL-RENDERING to kill it
-	//   sleep some time if no message received
-	//
-	return 0;
+		//   handle received messages:
+		//     CREATE_TAB:
+		//       Prepare communication pipes with a new URL-RENDERING process
+		//       Fork the new URL-RENDERING process
+		//     NEW_URI_ENTERED:
+		//       Send message to the URL-RENDERING process in which the new url is going to be rendered
+		//     TAB_KILLED:
+		//       If the killed process is the CONTROLLER process, send messages to kill all URL-RENDERING processes
+		//       If the killed process is a URL-RENDERING process, send message to the URL-RENDERING to kill it
+		//   sleep some time if no message received
+		//
+		return 0;
+
 }
 
 int main() {
