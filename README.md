@@ -1,9 +1,9 @@
 # project2
 
 1. Who did what?
-Christopher - Router, Controller functions
-Sushmitha - Router, create_new_tab_cb, error_handling
-Wei - Router, url_rendering_process, uri_entered_cb, error_handling, commenting
+Christopher - Router, Controller functions      
+Sushmitha - Router, create_new_tab_cb, error_handling     
+Wei - Router, url_rendering_process, uri_entered_cb, error_handling, commenting     
 
 2. Compilation procedure
 make clean
