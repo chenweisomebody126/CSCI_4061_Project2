@@ -29,7 +29,7 @@ void uri_entered_cb(GtkWidget* entry, gpointer data) {
 	}
 	browser_window *b_window = (browser_window *)data;
 	// This channel have pipes to communicate with ROUTER.
-	comm_channel channel = ((browser_window*)data)->channel;
+	comm_channel channel = b_window->channel;
 	// Get the tab index where the URL is to be rendered
 	int tab_index = query_tab_id_for_request(entry, data);
 	if(tab_index <= 0) {
@@ -79,7 +79,7 @@ void create_new_tab_cb(GtkButton *button, gpointer data)
 	comm_channel channel = b_window->channel;
 	// Append your code here
 	//send CREATE_TAB type of message to ROUTER proecss
-  child_req_to_parent *buff = (child_req_to_parent*) malloc(sizeof(child_req_to_parent));
+  	child_req_to_parent *buff = (child_req_to_parent*) malloc(sizeof(child_req_to_parent));
 	buff->type = 0;
 
 	write(channel.child_to_parent_fd[1], buff, sizeof(struct child_req_to_parent));
@@ -134,9 +134,9 @@ int url_rendering_process(int tab_index, comm_channel *channel) {
 	 			case 1: printf("NEW_URI_ENTERED\n");
 					render_web_page_in_tab(buff->req.uri_req.uri, b_window);
 	 				break;
-	 			case 2: printf("TAB_KILLED\n");
+	 			case 2: printf("TAB_KILLED");
 					process_all_gtk_events();
-					printf("Tab kill message received from router \n");
+					printf(" - url_rendering process received TAB_KILLED message\n");
 					exit(0);
 				default:
 					printf("%d, other messages read - bogus\n", buff->type );
@@ -260,7 +260,8 @@ int router_process() {
 							If the killed process is the CONTROLLER process, send messages to kill all URL-RENDERING processes
 							If the killed process is a URL-RENDERING process, send message to the URL-RENDERING to kill it
 							*/
-							case 2: printf("TAB_KILLED\n");
+							case 2:// printf("cleaning up\n");
+							//Cleaning up by deleting the pipes
 							closed_tab= buff->req.killed_req.tab_index;
 							/*
 							If the killed process is the CONTROLLER process,
@@ -287,6 +288,7 @@ int router_process() {
 													printf("error in waitpid() in terms of tab_index %d when closing CONTROLLER_TAB \n",i);
 											}
 										}
+											else printf("\n Failed to send kill message to child process: Bad file descriptor\n");
 
 								}
 								exit(0);
