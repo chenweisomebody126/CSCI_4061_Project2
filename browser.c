@@ -293,7 +293,7 @@ int router_process() {
 													printf("error in waitpid() in terms of tab_index %d when closing CONTROLLER_TAB \n",i);
 											}
 										}
-											else printf("\n Failed to send kill message to child process: Bad file descriptor\n");
+											else printf("\n Failed to send kill message to child process: Bad file descriptor or tab has previously been killed\n");
 
 								}
 								exit(0);
