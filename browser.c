@@ -185,8 +185,7 @@ int router_process() {
 	int open_tabs = 0;
 	int closed_tab;
 	int flags;
-	//set boolean variable receive ==false when none of channels receive massage
-	bool receive = false;
+	bool receive;
 	child_req_to_parent *buff=(child_req_to_parent*) malloc(sizeof(child_req_to_parent));
 	int i;
 	for (i = 0; i<MAX_TAB;i++){
@@ -209,6 +208,8 @@ int router_process() {
 		// Poll child processes' communication channels using non-blocking pipes.
 		while(1){
 			int i;
+			//set boolean variable receive =false, and if none of channels receive massage, sleep
+			receive= false;
 			for (i=0;i<=open_tabs;i++){
 				if (channel[i]!=NULL){
 					//configure the pipe as the non-blocking pipe
