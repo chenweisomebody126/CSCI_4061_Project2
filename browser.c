@@ -114,7 +114,6 @@ int url_rendering_process(int tab_index, comm_channel *channel) {
 
 	//infinite loop to wait till the router writes the message for the rendering
 	while (1) {
-		usleep(1000);
 		/*
 		when we read from the non-blocking pipe, there exists three situtations:
 		1) nread = -1:
@@ -145,6 +144,8 @@ int url_rendering_process(int tab_index, comm_channel *channel) {
 //no data was received from the ROUTER process
 		else
 			process_single_gtk_event();
+			usleep(1000);
+
 	}
 
 	return 0;
