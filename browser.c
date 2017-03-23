@@ -185,6 +185,8 @@ int router_process() {
 	int open_tabs = 0;
 	int closed_tab;
 	int flags;
+	//set boolean variable receive ==false when none of channels receive massage
+	bool receive = false;
 	child_req_to_parent *buff=(child_req_to_parent*) malloc(sizeof(child_req_to_parent));
 	int i;
 	for (i = 0; i<MAX_TAB;i++){
@@ -221,6 +223,7 @@ int router_process() {
 					ssize_t nread= read(channel[i]->child_to_parent_fd[0],buff,sizeof(struct child_req_to_parent));
 
 					if (nread>0){
+						receive= true;
 						switch (buff->type){
 
 							 /*
@@ -316,11 +319,12 @@ int router_process() {
 								break;
 						}
 					}
-					//sleep some time if no message received
-					usleep(1000);
 				}
 			}
 	 }
+	 //sleep some time if no message received
+	 if (receive== false)
+	 	usleep(1000);
  }
  return 0;
 }
